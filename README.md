@@ -1,4 +1,3 @@
-# Calculator-BBM-SNL
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -15,6 +14,7 @@
             --secondary: #00cec9;
             --accent: #6c5ce7;
             --input-bg: #f8f9fa;
+            --warning: #ffbe76;
         }
 
         .dark-mode {
@@ -52,8 +52,7 @@
             margin-bottom: 25px; 
         }
 
-        h2 { margin: 0; font-size: 1.5rem;
-            font-weight: 700; color: var(--primary); }
+        h2 { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--primary); }
 
         .theme-btn { 
             cursor: pointer;
@@ -140,6 +139,18 @@
             border-radius: 15px; 
             text-align: center;
             display: none;
+        }
+
+        .warning-box {
+            background: rgba(255, 190, 118, 0.2);
+            border-left: 4px solid var(--warning);
+            color: var(--text);
+            padding: 10px;
+            margin-top: 15px;
+            font-size: 0.8rem;
+            border-radius: 5px;
+            display: none;
+            text-align: left;
         }
 
         .footer {
@@ -233,6 +244,9 @@
     </div>
 
     <div id="result" class="result-box"></div>
+    <div id="wetStackWarning" class="warning-box">
+        <i class="fas fa-exclamation-triangle"></i> <strong>Peringatan Wet Stacking!</strong> Beban di bawah 30% berisiko merusak mesin. Gunakan load bank jika memungkinkan.
+    </div>
 
     <div class="footer">
         BY SNL ACEH
@@ -241,14 +255,13 @@
 
 <script>
     let gensetData = {
-        "default": { capacityKVA: 0, capacityKW: 0, fullConsumption: 0 },
-        "cummins300": { capacityKVA: 300, capacityKW: 240, fullConsumption: 57.3 },
-        "previous": { capacityKVA: 350, capacityKW: 240, fullConsumption: 70.5 },
-        "cummins400": { capacityKVA: 400, capacityKW: 320, fullConsumption: 72 },
-        "cummins500": { capacityKVA: 500, capacityKW: 400, fullConsumption: 90 }
+        "default": { capacityKVA: 0, capacityKW: 0 },
+        "cummins300": { capacityKVA: 300, capacityKW: 240 },
+        "previous": { capacityKVA: 350, capacityKW: 280 },
+        "cummins400": { capacityKVA: 400, capacityKW: 320 },
+        "cummins500": { capacityKVA: 500, capacityKW: 400 }
     };
 
-    let currentTotalFuel = 0;
     let activeSection = null;
 
     document.getElementById('themeToggle').addEventListener('click', function() {
@@ -257,16 +270,13 @@
         document.getElementById('themeIcon').className = isDark ? 'fas fa-sun' : 'fas fa-moon';
     });
 
-    document.getElementById("totalFuel").addEventListener("input", function() {
-        currentTotalFuel = parseFloat(this.value) || 0;
-    });
-
     function updateSpecs() {
         const type = document.getElementById("gensetType").value;
         const specs = gensetData[type];
         const chip = document.getElementById("gensetSpecs");
         if(type !== "default") {
-            chip.innerHTML = `<i class="fas fa-info-circle"></i> ${specs.capacityKVA} kVA / ${specs.capacityKW} kW | Full: ${specs.fullConsumption} L/H`;
+            const fullCons = (0.21 * specs.capacityKVA).toFixed(1);
+            chip.innerHTML = `<i class="fas fa-info-circle"></i> ${specs.capacityKVA} kVA / ${specs.capacityKW} kW | Est. Full: ${fullCons} L/H`;
             chip.style.display = 'block';
         } else { chip.style.display = 'none'; }
     }
@@ -290,7 +300,9 @@
 
     function calculate() {
         const type = document.getElementById("gensetType").value;
-        if (type === "default" || currentTotalFuel <= 0) {
+        const totalFuel = parseFloat(document.getElementById("totalFuel").value) || 0;
+        
+        if (type === "default" || totalFuel <= 0) {
             alert("Pilih tipe genset dan isi total BBM!");
             return;
         }
@@ -298,6 +310,7 @@
         const specs = gensetData[type];
         let totalCons = 0;
         let durMinutes = 0;
+        let loadPercValue = 0;
 
         if (activeSection === "pln") {
             const h1 = parseFloat(document.getElementById("engineHourBefore").value) || 0;
@@ -308,9 +321,14 @@
             durMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
             let durHours = durMinutes / 60;
             
-            const load = (parseFloat(document.getElementById("loadMDP1").value) || 0) + (parseFloat(document.getElementById("loadMDP2").value) || 0);
-            const loadPerc = (load / specs.capacityKW) * 100;
-            totalCons = (loadPerc / 100) * specs.fullConsumption * durHours;
+            const loadInput = (parseFloat(document.getElementById("loadMDP1").value) || 0) + (parseFloat(document.getElementById("loadMDP2").value) || 0);
+            loadPercValue = loadInput / specs.capacityKW; 
+            
+            totalCons = 0.21 * specs.capacityKVA * loadPercValue * durHours;
+            
+            // Tampilkan Peringatan jika beban < 30%
+            document.getElementById("wetStackWarning").style.display = (loadPercValue < 0.3) ? "block" : "none";
+            
         } else {
             const h1 = parseFloat(document.getElementById("engineHourBeforeWarm").value) || 0;
             const m1 = parseFloat(document.getElementById("engineMinBeforeWarm").value) || 0;
@@ -320,16 +338,17 @@
             durMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
             let durHours = durMinutes / 60;
             
-            totalCons = (specs.fullConsumption * 0.1) * durHours;
+            totalCons = 0.21 * specs.capacityKVA * 0.05 * durHours;
+            document.getElementById("wetStackWarning").style.display = "none";
         }
 
         const resDiv = document.getElementById("result");
         resDiv.style.display = 'block';
         resDiv.innerHTML = `
             <div style="font-size:0.9rem; opacity:0.9">ESTIMASI SISA BBM</div>
-            <div style="font-size:2rem; font-weight:800; margin:5px 0">${(currentTotalFuel - totalCons).toFixed(2)} Liter</div>
+            <div style="font-size:2rem; font-weight:800; margin:5px 0">${(totalFuel - totalCons).toFixed(2)} Liter</div>
             <div style="font-size:0.8rem; opacity:0.8; border-top:1px solid rgba(255,255,255,0.2); padding-top:10px; margin-top:10px">
-                Pemakaian: ${totalCons.toFixed(2)} L | Durasi: ${durMinutes} Menit
+                Beban: ${(loadPercValue * 100).toFixed(1)}% | Pemakaian: ${totalCons.toFixed(2)} L | Durasi: ${durMinutes} Menit
             </div>
         `;
     }
